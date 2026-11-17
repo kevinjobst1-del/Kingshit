@@ -1,0 +1,60 @@
+name: Inspect SHIFT SUPERVISOR Works archive
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Inspect and validate archive
+        shell: bash
+        run: |
+          python - <<'PY'
+          import zipfile, pathlib, re, sys, json
+          archive = pathlib.Path("SHIFT_SUPERVISOR_DELUXE_Works_iPhone_Edition_1.2.0.zip")
+          if not archive.exists():
+              raise SystemExit("Archive missing")
+          report = []
+          with zipfile.ZipFile(archive) as z:
+              names = z.namelist()
+              report.append(f"ARCHIVE_BYTES={archive.stat().st_size}")
+              report.append(f"ENTRY_COUNT={len(names)}")
+              report.extend("FILE " + n for n in names[:500])
+              server_names = [n for n in names if n.endswith("works_server.py")]
+              report.append("SERVER_FILES=" + json.dumps(server_names))
+              app_candidates = [n for n in names if n.endswith(("index.html","manifest.webmanifest","manifest.json","service-worker.js","sw.js"))]
+              report.append("WEB_APP_FILES=" + json.dumps(app_candidates))
+              for server_name in server_names:
+                  raw = z.read(server_name).decode("utf-8", "replace")
+                  lines = raw.splitlines()
+                  report.append(f"--- SERVER CONFIG {server_name} ---")
+                  for i,line in enumerate(lines):
+                      if re.search(r"WORKS_HOST|WORKS_PORT|WORKS_DATA_DIR|WORKS_PUBLIC_ORIGIN|PORT|app_dir|def main|argparse|serve_forever|HTTPServer|ThreadingHTTPServer|sqlite", line, re.I):
+                          lo=max(0,i-1); hi=min(len(lines),i+2)
+                          report.extend(f"{j+1}: {lines[j]}" for j in range(lo,hi))
+                  compile(raw, server_name, "exec")
+              report.append("PYTHON_COMPILE=OK")
+              for name in app_candidates:
+                  if name.endswith("index.html"):
+                      html=z.read(name).decode("utf-8","replace")
+                      report.append(f"INDEX_HTML={name} BYTES={len(html)}")
+                      report.append("INDEX_HAS_MANIFEST=" + str(bool(re.search(r'rel=[\"\']manifest',html,re.I))))
+                      report.append("INDEX_HAS_SERVICE_WORKER=" + str(bool(re.search(r'serviceWorker|service-worker',html,re.I))))
+          pathlib.Path("archive-inspection.txt").write_text("\n".join(report), encoding="utf-8")
+          print("\n".join(report))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shift-supervisor-archive-inspection
+          path: archive-inspection.txt
+          retention-days: 7
