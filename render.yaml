@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: mojoe-shift-supervisor-deluxe
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    autoDeployTrigger: commit
+    disk:
+      name: shift-supervisor-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: WORKS_HOST
+        value: "0.0.0.0"
+      - key: WORKS_DATA_DIR
+        value: "/var/data"
+      - key: WORKS_SECURE_COOKIE
+        value: "1"
